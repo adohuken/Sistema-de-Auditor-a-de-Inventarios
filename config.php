@@ -8,21 +8,28 @@
 if (file_exists(__DIR__ . '/config.local.php')) {
     require_once __DIR__ . '/config.local.php';
 } else {
-    // Detectar si la aplicación se está ejecutando en servidor Local (XAMPP / WAMPServer) u Online (Hosting)
-    $httpHost   = $_SERVER['HTTP_HOST'] ?? '';
+    // Detectar si la aplicación se está ejecutando en servidor Local (XAMPP / WAMPServer / Red LAN 192.168.x.x) u Online
+    $httpHost   = strtolower($_SERVER['HTTP_HOST'] ?? '');
+    $hostOnly   = explode(':', $httpHost)[0];
     $serverAddr = $_SERVER['SERVER_ADDR'] ?? '';
     
+    // Identificar si la solicitud proviene de localhost, IP en red local (192.168.x.x, 10.x.x.x, 172.16.x.x)
     $esEntornoLocal = (
-        empty($httpHost) ||
-        in_array($httpHost, ['localhost', '127.0.0.1', '::1']) ||
-        strpos($httpHost, 'localhost:') === 0 ||
-        strpos($httpHost, '127.0.0.1:') === 0 ||
-        in_array($serverAddr, ['127.0.0.1', '::1'])
+        empty($hostOnly) ||
+        $hostOnly === 'localhost' ||
+        $hostOnly === '127.0.0.1' ||
+        $hostOnly === '::1' ||
+        str_ends_with($hostOnly, '.local') ||
+        preg_match('/^192\.168\.\d+\.\d+$/', $hostOnly) ||
+        preg_match('/^10\.\d+\.\d+\.\d+$/', $hostOnly) ||
+        preg_match('/^172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+$/', $hostOnly) ||
+        preg_match('/^192\.168\.\d+\.\d+$/', $serverAddr) ||
+        preg_match('/^10\.\d+\.\d+\.\d+$/', $serverAddr)
     );
 
     if ($esEntornoLocal) {
         // =========================================================================
-        // 1. CONFIGURACIÓN ENTORNO LOCAL (XAMPP / WAMPServer)
+        // 1. CONFIGURACIÓN ENTORNO LOCAL / RED LAN (XAMPP / WAMPServer)
         // =========================================================================
         if (!defined('DB_HOST'))  define('DB_HOST', 'localhost');
         if (!defined('DB_NAME'))  define('DB_NAME', 'inventario_db');

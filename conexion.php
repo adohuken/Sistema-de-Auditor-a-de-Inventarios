@@ -48,8 +48,22 @@ function getPDOConnection() {
         }
 
         // Si fallaron los intentos, desplegar diagnóstico claro según el entorno
-        $httpHost = $_SERVER['HTTP_HOST'] ?? '';
-        $esLocal = empty($httpHost) || in_array($httpHost, ['localhost', '127.0.0.1', '::1']) || strpos($httpHost, 'localhost:') === 0;
+        $httpHost   = strtolower($_SERVER['HTTP_HOST'] ?? '');
+        $hostOnly   = explode(':', $httpHost)[0];
+        $serverAddr = $_SERVER['SERVER_ADDR'] ?? '';
+
+        $esLocal = (
+            empty($hostOnly) ||
+            $hostOnly === 'localhost' ||
+            $hostOnly === '127.0.0.1' ||
+            $hostOnly === '::1' ||
+            str_ends_with($hostOnly, '.local') ||
+            preg_match('/^192\.168\.\d+\.\d+$/', $hostOnly) ||
+            preg_match('/^10\.\d+\.\d+\.\d+$/', $hostOnly) ||
+            preg_match('/^172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+$/', $hostOnly) ||
+            preg_match('/^192\.168\.\d+\.\d+$/', $serverAddr) ||
+            preg_match('/^10\.\d+\.\d+\.\d+$/', $serverAddr)
+        );
 
         $msgHtml = '<div style="padding: 24px; font-family: system-ui, -apple-system, sans-serif; background: #fff3f3; color: #721c24; border: 1px solid #f5c6cb; border-radius: 12px; margin: 30px auto; max-width: 650px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">';
         $msgHtml .= '<h3 style="margin-top:0; color:#b91c1c;">Error de Conexión a Base de Datos</h3>';
@@ -57,13 +71,14 @@ function getPDOConnection() {
         $msgHtml .= '<p style="font-family: monospace; background: #fee2e2; padding: 10px; border-radius: 6px; font-size: 0.85rem;"><b>Detalle técnico:</b> ' . htmlspecialchars($ultimoError ? $ultimoError->getMessage() : 'Error desconocido') . '</p>';
         
         if ($esLocal) {
-            $msgHtml .= '<h4>Verificaciones Modo Local (XAMPP / WAMPServer):</h4>';
-            $msgHtml .= '<ul><li>Asegúrate de que el módulo <b>MySQL</b> esté iniciado en el Panel de Control.</li>';
-            $msgHtml .= '<li>Verifica que la base de datos <code>' . htmlspecialchars(DB_NAME) . '</code> exista en <b>phpMyAdmin</b>.</li></ul>';
+            $msgHtml .= '<h4>Verificaciones Modo Local / Red LAN (XAMPP / WAMPServer):</h4>';
+            $msgHtml .= '<ul><li>Asegúrate de que el módulo <b>MySQL</b> esté iniciado en tu panel de XAMPP / WAMPServer.</li>';
+            $msgHtml .= '<li>Verifica que la base de datos <code>' . htmlspecialchars(DB_NAME) . '</code> exista en tu <b>phpMyAdmin</b> local.</li></ul>';
         } else {
             $msgHtml .= '<h4>Verificaciones Modo Online (Hosting / InfinityFree):</h4>';
-            $msgHtml .= '<ul><li>Asegúrate de haber creado la base de datos en el panel de control de InfinityFree.</li>';
-            $msgHtml .= '<li>Confirma las credenciales en <code>config.php</code> o <code>config.local.php</code>.</li></ul>';
+            $msgHtml .= '<ul><li>Asegúrate de haber creado la base de datos exacta en el panel de control de InfinityFree.</li>';
+            $msgHtml .= '<li><b>Nota InfinityFree:</b> Su MySQL bloquea conexiones externas desde tu PC local. Las credenciales de InfinityFree solo funcionan cuando la app está subida a sus servidores web.</li>';
+            $msgHtml .= '<li>Confirma el nombre de la BD en <code>config.php</code> o <code>config.local.php</code>.</li></ul>';
         }
         $msgHtml .= '</div>';
         
