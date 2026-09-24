@@ -46,10 +46,18 @@ function getPDOConnection() {
             PDO::ATTR_TIMEOUT            => 4,
         ];
 
+        // Configurar Zona Horaria PHP (GMT-6)
+        date_default_timezone_set('America/Mexico_City');
+
         foreach ($destinos as $target) {
             try {
                 $dsn = "mysql:host=" . $target['host'] . ";port=" . $target['port'] . ";dbname=" . $target['dbname'] . ";charset=" . DB_CHARSET;
                 $pdo = new PDO($dsn, $target['user'], $target['pass'], $options);
+
+                // Intentar establecer zona horaria MySQL
+                try {
+                    $pdo->exec("SET time_zone = '-06:00'");
+                } catch (PDOException $eTz) {}
 
                 // Migrar y asegurar tablas y datos iniciales
                 migrarEstructuraEventos($pdo);
