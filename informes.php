@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/conexion.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/includes/exporter.php';
 
 // Exigir permiso al módulo de informes
 exigirPermisoModulo('informes');
@@ -13,24 +14,26 @@ exigirPermisoModulo('informes');
 $eventoActual = obtenerEventoActivo();
 $eventoId = $eventoActual ? $eventoActual['id'] : 1;
 $tipoInforme = $_GET['tipo'] ?? 'general';
-$exportarCSV = isset($_GET['export']) && $_GET['export'] === 'csv';
+$exportMode = $_GET['export'] ?? null;
 
 try {
     $pdo = getPDOConnection();
 
     // =========================================================================
-    // EXPORTACIÓN A EXCEL / CSV SEGÚN EL INFORME Y EVENTO SELECCIONADO
+    // EXPORTACIÓN AVANZADA A EXCEL / CSV SEGÚN TIPO DE INFORME
     // =========================================================================
-    if ($exportarCSV) {
+    if (in_array($exportMode, ['excel', 'csv'])) {
         $nombreLimpio = preg_replace('/[^a-zA-Z0-9_]/', '_', $eventoActual['nombre_evento'] ?? 'auditoria');
-        $filename = "informe_" . $tipoInforme . "_" . $nombreLimpio . ".csv";
-        header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename="' . $filename . '"');
-        $output = fopen('php://output', 'w');
-        fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+        $columnas = [];
+        $filas = [];
+        $totales = [];
+        $titulo = "";
+        $subtitulo = "Auditoría: " . ($eventoActual['nombre_evento'] ?? 'General') . " | Bodega/Sucursal: " . ($eventoActual['bodega_sucursal'] ?? 'Todas');
 
         if ($tipoInforme === 'faltantes') {
-            fputcsv($output, ['Bodega', 'SKU', 'Producto', 'Stock Teórico', 'Stock Físico', 'Diferencia Faltante']);
+            $titulo = "INFORME DE PRODUCTOS FALTANTES (MERMAS DE INVENTARIO)";
+            $columnas = ['Bodega', 'Código SKU', 'Producto', 'Stock Teórico', 'Stock Físico', 'Diferencia Faltante'];
+            
             $stmt = $pdo->prepare("
                 SELECT COALESCE(p.bodega, 'Bodega Principal') AS bodega, p.codigo_producto, p.producto, p.existencias_sistema AS stock_teorico,
                        COALESCE(SUM(c.cantidad_fisica), 0) AS stock_fisico,
@@ -43,11 +46,35 @@ try {
                 ORDER BY diferencia ASC
             ");
             $stmt->execute([':ev' => $eventoId]);
-            foreach ($stmt->fetchAll() as $r) {
-                fputcsv($output, [$r['bodega'], $r['codigo_producto'], $r['producto'], $r['stock_teorico'], $r['stock_fisico'], $r['diferencia']]);
+            $rows = $stmt->fetchAll();
+
+            $sumTeorico = 0; $sumFisico = 0; $sumDiferencia = 0;
+            foreach ($rows as $r) {
+                $sumTeorico += $r['stock_teorico'];
+                $sumFisico += $r['stock_fisico'];
+                $sumDiferencia += $r['diferencia'];
+                $filas[] = [
+                    ['val' => $r['bodega'], 'type' => 'text'],
+                    ['val' => $r['codigo_producto'], 'type' => 'sku'],
+                    ['val' => $r['producto'], 'type' => 'text'],
+                    ['val' => number_format($r['stock_teorico'], 2), 'type' => 'num'],
+                    ['val' => number_format($r['stock_fisico'], 2), 'type' => 'num'],
+                    ['val' => number_format($r['diferencia'], 2), 'type' => 'num']
+                ];
             }
+            $totales = [
+                ['val' => 'TOTAL MERMAS', 'type' => 'text'],
+                ['val' => count($rows) . ' artículos', 'type' => 'center'],
+                ['val' => '', 'type' => 'text'],
+                ['val' => number_format($sumTeorico, 2), 'type' => 'num'],
+                ['val' => number_format($sumFisico, 2), 'type' => 'num'],
+                ['val' => number_format($sumDiferencia, 2), 'type' => 'num']
+            ];
+
         } elseif ($tipoInforme === 'sobrantes') {
-            fputcsv($output, ['Bodega', 'SKU', 'Producto', 'Stock Teórico', 'Stock Físico', 'Diferencia Sobrante']);
+            $titulo = "INFORME DE PRODUCTOS SOBRANTES (EXCEDENTES DE INVENTARIO)";
+            $columnas = ['Bodega', 'Código SKU', 'Producto', 'Stock Teórico', 'Stock Físico', 'Diferencia Sobrante'];
+
             $stmt = $pdo->prepare("
                 SELECT COALESCE(p.bodega, 'Bodega Principal') AS bodega, p.codigo_producto, p.producto, p.existencias_sistema AS stock_teorico,
                        COALESCE(SUM(c.cantidad_fisica), 0) AS stock_fisico,
@@ -60,11 +87,35 @@ try {
                 ORDER BY diferencia DESC
             ");
             $stmt->execute([':ev' => $eventoId]);
-            foreach ($stmt->fetchAll() as $r) {
-                fputcsv($output, [$r['bodega'], $r['codigo_producto'], $r['producto'], $r['stock_teorico'], $r['stock_fisico'], $r['diferencia']]);
+            $rows = $stmt->fetchAll();
+
+            $sumTeorico = 0; $sumFisico = 0; $sumDiferencia = 0;
+            foreach ($rows as $r) {
+                $sumTeorico += $r['stock_teorico'];
+                $sumFisico += $r['stock_fisico'];
+                $sumDiferencia += $r['diferencia'];
+                $filas[] = [
+                    ['val' => $r['bodega'], 'type' => 'text'],
+                    ['val' => $r['codigo_producto'], 'type' => 'sku'],
+                    ['val' => $r['producto'], 'type' => 'text'],
+                    ['val' => number_format($r['stock_teorico'], 2), 'type' => 'num'],
+                    ['val' => number_format($r['stock_fisico'], 2), 'type' => 'num'],
+                    ['val' => '+' . number_format($r['diferencia'], 2), 'type' => 'num']
+                ];
             }
+            $totales = [
+                ['val' => 'TOTAL EXCEDENTES', 'type' => 'text'],
+                ['val' => count($rows) . ' artículos', 'type' => 'center'],
+                ['val' => '', 'type' => 'text'],
+                ['val' => number_format($sumTeorico, 2), 'type' => 'num'],
+                ['val' => number_format($sumFisico, 2), 'type' => 'num'],
+                ['val' => '+' . number_format($sumDiferencia, 2), 'type' => 'num']
+            ];
+
         } elseif ($tipoInforme === 'categorias') {
-            fputcsv($output, ['Bodega', 'Total SKUs', 'Stock Teórico Total', 'Stock Físico Total', 'Diferencia Global']);
+            $titulo = "RESUMEN DE AUDITORÍA AGRUPADO POR BODEGA / SUCURSAL";
+            $columnas = ['Bodega / Sucursal', 'Total SKUs', 'Stock Teórico Total', 'Stock Físico Total', 'Diferencia Global'];
+
             $stmt = $pdo->prepare("
                 SELECT 
                     COALESCE(p.bodega, 'Bodega Principal') AS bodega,
@@ -82,11 +133,34 @@ try {
                 ORDER BY bodega ASC
             ");
             $stmt->execute([':ev' => $eventoId]);
-            foreach ($stmt->fetchAll() as $r) {
-                fputcsv($output, [$r['bodega'], $r['total_skus'], $r['stock_teorico_total'], $r['stock_fisico_total'], $r['diferencia_global']]);
+            $rows = $stmt->fetchAll();
+
+            $sumSKUs = 0; $sumTeorico = 0; $sumFisico = 0; $sumDiferencia = 0;
+            foreach ($rows as $r) {
+                $sumSKUs += $r['total_skus'];
+                $sumTeorico += $r['stock_teorico_total'];
+                $sumFisico += $r['stock_fisico_total'];
+                $sumDiferencia += $r['diferencia_global'];
+                $filas[] = [
+                    ['val' => $r['bodega'], 'type' => 'text'],
+                    ['val' => number_format($r['total_skus']), 'type' => 'center'],
+                    ['val' => number_format($r['stock_teorico_total'], 2), 'type' => 'num'],
+                    ['val' => number_format($r['stock_fisico_total'], 2), 'type' => 'num'],
+                    ['val' => ($r['diferencia_global'] > 0 ? '+' : '') . number_format($r['diferencia_global'], 2), 'type' => 'num']
+                ];
             }
+            $totales = [
+                ['val' => 'TOTAL GLOBAL BODEGAS', 'type' => 'text'],
+                ['val' => number_format($sumSKUs) . ' SKUs', 'type' => 'center'],
+                ['val' => number_format($sumTeorico, 2), 'type' => 'num'],
+                ['val' => number_format($sumFisico, 2), 'type' => 'num'],
+                ['val' => ($sumDiferencia > 0 ? '+' : '') . number_format($sumDiferencia, 2), 'type' => 'num']
+            ];
+
         } elseif ($tipoInforme === 'usuarios') {
-            fputcsv($output, ['Usuario / Auditor', 'Rol en Evento', 'Bodega Asignada', 'Lecturas Registradas', 'Unidades Totales Contadas', 'Primer Conteo', 'Último Conteo']);
+            $titulo = "DESEMPEÑO Y PRODUCTIVIDAD DEL EQUIPO DE AUDITORÍA";
+            $columnas = ['Usuario / Auditor', 'Rol en Evento', 'Bodega Asignada', 'Nº Lecturas Escaneadas', 'Unidades Totales Contadas', 'Primer Conteo', 'Último Conteo'];
+
             $sqlUsuariosCsv = "
                 SELECT 
                     u.nombre AS usuario,
@@ -121,24 +195,43 @@ try {
             ";
             $stmt = $pdo->prepare($sqlUsuariosCsv);
             $stmt->execute([':ev' => $eventoId]);
-            foreach ($stmt->fetchAll() as $r) {
+            $rows = $stmt->fetchAll();
+
+            $totLecturas = 0; $totUnidades = 0;
+            foreach ($rows as $r) {
                 $rolLabel = 'Sin Asignación';
                 if ($r['rol_evento'] === 'contador') $rolLabel = 'Contador Físico';
                 elseif ($r['rol_evento'] === 'supervisor') $rolLabel = 'Supervisor de Zona';
                 elseif ($r['rol_evento'] === 'auditor_lider') $rolLabel = 'Auditor Líder';
 
-                fputcsv($output, [
-                    $r['usuario'],
-                    $rolLabel,
-                    $r['bodega_asignada'] ?: 'Todas / General',
-                    $r['lecturas'],
-                    $r['unidades_contadas'],
-                    $r['primer_conteo'] ? date('d/m/Y H:i', strtotime($r['primer_conteo'])) : 'Sin lecturas',
-                    $r['ultimo_conteo'] ? date('d/m/Y H:i', strtotime($r['ultimo_conteo'])) : 'Sin lecturas'
-                ]);
+                $totLecturas += $r['lecturas'];
+                $totUnidades += $r['unidades_contadas'];
+
+                $filas[] = [
+                    ['val' => $r['usuario'], 'type' => 'text'],
+                    ['val' => $rolLabel, 'type' => 'center'],
+                    ['val' => $r['bodega_asignada'] ?: 'Todas / General', 'type' => 'text'],
+                    ['val' => number_format($r['lecturas']), 'type' => 'center'],
+                    ['val' => number_format($r['unidades_contadas'], 2), 'type' => 'num'],
+                    ['val' => $r['primer_conteo'] ? date('d/m/Y H:i', strtotime($r['primer_conteo'])) : 'Sin lecturas', 'type' => 'center'],
+                    ['val' => $r['ultimo_conteo'] ? date('d/m/Y H:i', strtotime($r['ultimo_conteo'])) : 'Sin lecturas', 'type' => 'center']
+                ];
             }
+            $totales = [
+                ['val' => 'TOTAL EQUIPO', 'type' => 'text'],
+                ['val' => count($rows) . ' auditores', 'type' => 'center'],
+                ['val' => '', 'type' => 'text'],
+                ['val' => number_format($totLecturas), 'type' => 'center'],
+                ['val' => number_format($totUnidades, 2), 'type' => 'num'],
+                ['val' => '', 'type' => 'text'],
+                ['val' => '', 'type' => 'text']
+            ];
+
         } else {
-            fputcsv($output, ['Bodega', 'SKU', 'Producto', 'Stock Teórico', 'Stock Físico', 'Diferencia', 'Estado']);
+            // General
+            $titulo = "INFORME GENERAL DE CONCILIACIÓN DE INVENTARIO";
+            $columnas = ['Bodega', 'Código SKU', 'Producto', 'Stock Teórico ERP', 'Stock Físico Real', 'Diferencia', 'Estado'];
+
             $stmt = $pdo->prepare("
                 SELECT COALESCE(p.bodega, 'Bodega Principal') AS bodega, p.codigo_producto, p.producto, p.existencias_sistema AS stock_teorico,
                        COALESCE(SUM(c.cantidad_fisica), 0) AS stock_fisico,
@@ -156,12 +249,41 @@ try {
                 ORDER BY p.producto ASC
             ");
             $stmt->execute([':ev' => $eventoId]);
-            foreach ($stmt->fetchAll() as $r) {
-                fputcsv($output, [$r['bodega'], $r['codigo_producto'], $r['producto'], $r['stock_teorico'], $r['stock_fisico'], $r['diferencia'], $r['estado']]);
+            $rows = $stmt->fetchAll();
+
+            $sumTeorico = 0; $sumFisico = 0; $sumDiferencia = 0;
+            foreach ($rows as $r) {
+                $sumTeorico += $r['stock_teorico'];
+                $sumFisico += $r['stock_fisico'];
+                $sumDiferencia += $r['diferencia'];
+
+                $filas[] = [
+                    ['val' => $r['bodega'], 'type' => 'text'],
+                    ['val' => $r['codigo_producto'], 'type' => 'sku'],
+                    ['val' => $r['producto'], 'type' => 'text'],
+                    ['val' => number_format($r['stock_teorico'], 2), 'type' => 'num'],
+                    ['val' => number_format($r['stock_fisico'], 2), 'type' => 'num'],
+                    ['val' => ($r['diferencia'] > 0 ? '+' : '') . number_format($r['diferencia'], 2), 'type' => 'num'],
+                    ['val' => $r['estado'], 'type' => 'status']
+                ];
             }
+            $totales = [
+                ['val' => 'TOTAL GENERAL', 'type' => 'text'],
+                ['val' => count($rows) . ' artículos', 'type' => 'center'],
+                ['val' => '', 'type' => 'text'],
+                ['val' => number_format($sumTeorico, 2), 'type' => 'num'],
+                ['val' => number_format($sumFisico, 2), 'type' => 'num'],
+                ['val' => ($sumDiferencia > 0 ? '+' : '') . number_format($sumDiferencia, 2), 'type' => 'num'],
+                ['val' => '', 'type' => 'text']
+            ];
         }
-        fclose($output);
-        exit;
+
+        $filename = "informe_" . $tipoInforme . "_" . $nombreLimpio;
+        if ($exportMode === 'excel') {
+            exportarExcelFormateado($filename . ".xls", $titulo, $subtitulo, $columnas, $filas, $totales);
+        } else {
+            exportarCSVEstandar($filename . ".csv", $columnas, $filas, $totales);
+        }
     }
 
     // =========================================================================
@@ -301,12 +423,15 @@ include __DIR__ . '/includes/header.php';
         <h3 class="fw-bold text-dark mb-1"><i class="bi bi-file-earmark-bar-graph-fill text-primary me-2"></i>Centro de Informes & Analítica</h3>
         <p class="text-muted mb-0">Informe de la auditoría: <b><?= htmlspecialchars($eventoActual['nombre_evento'] ?? 'Ninguna') ?></b></p>
     </div>
-    <div class="col-md-5 text-md-end mt-3 mt-md-0">
-        <button onclick="window.print()" class="btn btn-outline-secondary btn-sm rounded-pill me-2 fw-semibold">
+    <div class="col-md-5 text-md-end mt-3 mt-md-0 d-flex justify-content-md-end gap-2 flex-wrap">
+        <button onclick="window.print()" class="btn btn-outline-secondary btn-sm rounded-pill fw-semibold">
             <i class="bi bi-printer-fill me-1"></i> Imprimir Acta / PDF
         </button>
-        <a href="informes.php?tipo=<?= $tipoInforme ?>&export=csv" class="btn btn-outline-success btn-sm rounded-pill fw-semibold">
-            <i class="bi bi-file-earmark-spreadsheet me-1"></i> Exportar a Excel (CSV)
+        <a href="informes.php?tipo=<?= $tipoInforme ?>&export=excel" class="btn btn-success btn-sm rounded-pill fw-semibold shadow-sm">
+            <i class="bi bi-file-earmark-excel-fill me-1"></i> Exportar Excel (.xls)
+        </a>
+        <a href="informes.php?tipo=<?= $tipoInforme ?>&export=csv" class="btn btn-outline-success btn-sm rounded-pill fw-semibold shadow-sm">
+            <i class="bi bi-file-earmark-spreadsheet me-1"></i> CSV
         </a>
     </div>
 </div>

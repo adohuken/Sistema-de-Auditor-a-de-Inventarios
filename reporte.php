@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/conexion.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/includes/exporter.php';
 
 // Exigir permiso al módulo de reporte/conciliación
 exigirPermisoModulo('reporte');
@@ -13,8 +14,8 @@ exigirPermisoModulo('reporte');
 $eventoActual = obtenerEventoActivo();
 $eventoId = $eventoActual ? $eventoActual['id'] : 1;
 
-// Exportación CSV si se solicita para este evento
-if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+// Exportación a Excel / CSV formateado según solicitud
+if (isset($_GET['export']) && in_array($_GET['export'], ['excel', 'csv'])) {
     try {
         $pdo = getPDOConnection();
         $sqlExport = "
@@ -45,30 +46,67 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
         $rowsExp = $stmtExp->fetchAll();
 
         $nombreLimpio = preg_replace('/[^a-zA-Z0-9_]/', '_', $eventoActual['nombre_evento'] ?? 'auditoria');
-        header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename="conciliacion_' . $nombreLimpio . '.csv"');
-        
-        $output = fopen('php://output', 'w');
-        fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
-        
-        fputcsv($output, ['SKU', 'Producto', 'Categoría', 'Marca', 'Stock Teórico', 'Stock Físico', 'Diferencia', 'Estado', 'Costo Promedio ($)', 'Impacto Económico ($)']);
-        
+
+        $columnas = [
+            'Código SKU',
+            'Producto',
+            'Categoría',
+            'Marca',
+            'Stock Teórico',
+            'Stock Físico',
+            'Diferencia',
+            'Estado',
+            'Costo Unit. ($)',
+            'Impacto Económico ($)'
+        ];
+
+        $filas = [];
+        $totTeorico = 0;
+        $totFisico = 0;
+        $totDiferencia = 0;
+        $totImpacto = 0;
+
         foreach ($rowsExp as $r) {
-            fputcsv($output, [
-                $r['codigo_producto'],
-                $r['producto'],
-                $r['categoria'],
-                $r['marca'],
-                $r['stock_teorico'],
-                $r['stock_fisico'],
-                $r['diferencia'],
-                $r['estado'],
-                $r['costo_promedio'],
-                $r['valor_diferencia']
-            ]);
+            $totTeorico += $r['stock_teorico'];
+            $totFisico += $r['stock_fisico'];
+            $totDiferencia += $r['diferencia'];
+            $totImpacto += $r['valor_diferencia'];
+
+            $filas[] = [
+                ['val' => $r['codigo_producto'], 'type' => 'sku'],
+                ['val' => $r['producto'], 'type' => 'text'],
+                ['val' => $r['categoria'], 'type' => 'text'],
+                ['val' => $r['marca'], 'type' => 'text'],
+                ['val' => number_format($r['stock_teorico'], 2), 'type' => 'num'],
+                ['val' => number_format($r['stock_fisico'], 2), 'type' => 'num'],
+                ['val' => ($r['diferencia'] > 0 ? '+' : '') . number_format($r['diferencia'], 2), 'type' => 'num'],
+                ['val' => $r['estado'], 'type' => 'status'],
+                ['val' => '$' . number_format($r['costo_promedio'], 2), 'type' => 'currency'],
+                ['val' => ($r['valor_diferencia'] < 0 ? '-$' : '$') . number_format(abs($r['valor_diferencia']), 2), 'type' => 'currency']
+            ];
         }
-        fclose($output);
-        exit;
+
+        $totales = [
+            ['val' => 'TOTALES', 'type' => 'text'],
+            ['val' => count($rowsExp) . ' SKUs', 'type' => 'center'],
+            ['val' => '', 'type' => 'text'],
+            ['val' => '', 'type' => 'text'],
+            ['val' => number_format($totTeorico, 2), 'type' => 'num'],
+            ['val' => number_format($totFisico, 2), 'type' => 'num'],
+            ['val' => ($totDiferencia > 0 ? '+' : '') . number_format($totDiferencia, 2), 'type' => 'num'],
+            ['val' => '', 'type' => 'text'],
+            ['val' => '', 'type' => 'text'],
+            ['val' => ($totImpacto < 0 ? '-$' : '$') . number_format(abs($totImpacto), 2), 'type' => 'currency']
+        ];
+
+        $titulo = "REPORTE DE CONCILIACIÓN DE INVENTARIO";
+        $subtitulo = "Auditoría: " . ($eventoActual['nombre_evento'] ?? 'General') . " | Sucursal/Bodega: " . ($eventoActual['bodega_sucursal'] ?? 'Todas');
+
+        if ($_GET['export'] === 'excel') {
+            exportarExcelFormateado("conciliacion_{$nombreLimpio}.xls", $titulo, $subtitulo, $columnas, $filas, $totales);
+        } else {
+            exportarCSVEstandar("conciliacion_{$nombreLimpio}.csv", $columnas, $filas, $totales);
+        }
     } catch (Exception $e) {
         die("Error al exportar reporte: " . $e->getMessage());
     }
@@ -193,9 +231,12 @@ include __DIR__ . '/includes/header.php';
         <h3 class="fw-bold text-dark mb-1"><i class="bi bi-bar-chart-line-fill text-primary me-2"></i>Conciliación de Inventario</h3>
         <p class="text-muted mb-0">Auditoría: <b><?= htmlspecialchars($eventoActual['nombre_evento'] ?? 'Ninguna') ?></b> (<?= $eventoActual['estado'] === 'activa' ? 'En Curso' : 'Cerrada' ?>)</p>
     </div>
-    <div class="col-md-5 text-md-end mt-3 mt-md-0">
-        <a href="reporte.php?export=csv" class="btn btn-outline-success btn-sm rounded-pill fw-semibold">
-            <i class="bi bi-file-earmark-spreadsheet me-1"></i> Exportar a Excel / CSV
+    <div class="col-md-5 text-md-end mt-3 mt-md-0 d-flex justify-content-md-end gap-2 flex-wrap">
+        <a href="reporte.php?export=excel" class="btn btn-success btn-sm rounded-pill fw-semibold shadow-sm">
+            <i class="bi bi-file-earmark-excel-fill me-1"></i> Exportar Excel (.xls)
+        </a>
+        <a href="reporte.php?export=csv" class="btn btn-outline-success btn-sm rounded-pill fw-semibold shadow-sm">
+            <i class="bi bi-file-earmark-spreadsheet me-1"></i> CSV
         </a>
     </div>
 </div>
