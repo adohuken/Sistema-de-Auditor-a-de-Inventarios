@@ -46,18 +46,26 @@ $paginaActual = basename($_SERVER['PHP_SELF']);
 
         <!-- Menú de Navegación Lateral -->
         <ul class="sidebar-menu">
+            <?php 
+            $hayPrincipales = tienePermisoModulo('dashboard') || tienePermisoModulo('eventos') || tienePermisoModulo('conteo') || tienePermisoModulo('reporte') || tienePermisoModulo('informes');
+            $hayAdmin = tienePermisoModulo('importar') || tienePermisoModulo('usuarios') || tienePermisoModulo('backup');
+            ?>
+
+            <?php if ($hayPrincipales): ?>
             <li class="menu-header">Módulos Principales</li>
 
             <!-- Dashboard Ejecutivo -->
+            <?php if (tienePermisoModulo('dashboard')): ?>
             <li>
                 <a class="sidebar-link <?= ($paginaActual === 'index.php' || $paginaActual === 'dashboard.php') ? 'active' : '' ?>" href="index.php">
                     <i class="bi bi-speedometer2"></i>
                     <span>Dashboard Ejecutivo</span>
                 </a>
             </li>
+            <?php endif; ?>
 
             <!-- Auditorías e Histórico -->
-            <?php if (esAdmin() || esAuditor()): ?>
+            <?php if (tienePermisoModulo('eventos')): ?>
             <li>
                 <a class="sidebar-link <?= ($paginaActual === 'eventos.php') ? 'active' : '' ?>" href="eventos.php">
                     <i class="bi bi-calendar-event"></i>
@@ -67,23 +75,27 @@ $paginaActual = basename($_SERVER['PHP_SELF']);
             <?php endif; ?>
 
             <!-- Toma Física Real -->
+            <?php if (tienePermisoModulo('conteo')): ?>
             <li>
                 <a class="sidebar-link <?= ($paginaActual === 'conteo.php') ? 'active' : '' ?>" href="conteo.php">
                     <i class="bi bi-barcode"></i>
                     <span>Toma Física Real</span>
                 </a>
             </li>
+            <?php endif; ?>
 
             <!-- Conciliación y Diferencias -->
-            <?php if (esAdmin() || esAuditor()): ?>
+            <?php if (tienePermisoModulo('reporte')): ?>
             <li>
                 <a class="sidebar-link <?= ($paginaActual === 'reporte.php') ? 'active' : '' ?>" href="reporte.php">
                     <i class="bi bi-bar-chart-line"></i>
                     <span>Conciliación</span>
                 </a>
             </li>
+            <?php endif; ?>
 
             <!-- Centro de Informes -->
+            <?php if (tienePermisoModulo('informes')): ?>
             <li>
                 <a class="sidebar-link <?= ($paginaActual === 'informes.php') ? 'active' : '' ?>" href="informes.php">
                     <i class="bi bi-file-earmark-bar-graph"></i>
@@ -91,24 +103,41 @@ $paginaActual = basename($_SERVER['PHP_SELF']);
                 </a>
             </li>
             <?php endif; ?>
+            <?php endif; ?>
 
-            <!-- Carga Stock ERP (Solo Admin) -->
-            <?php if (esAdmin()): ?>
+            <!-- Sección Administración -->
+            <?php if ($hayAdmin): ?>
             <li class="menu-header">Administración</li>
+
+            <!-- Carga Stock ERP -->
+            <?php if (tienePermisoModulo('importar')): ?>
             <li>
                 <a class="sidebar-link <?= ($paginaActual === 'importar.php') ? 'active' : '' ?>" href="importar.php">
                     <i class="bi bi-file-earmark-arrow-up"></i>
                     <span>Carga Stock ERP</span>
                 </a>
             </li>
+            <?php endif; ?>
 
             <!-- Usuarios y Roles -->
+            <?php if (tienePermisoModulo('usuarios')): ?>
             <li>
                 <a class="sidebar-link <?= ($paginaActual === 'usuarios.php') ? 'active' : '' ?>" href="usuarios.php">
                     <i class="bi bi-people"></i>
                     <span>Usuarios & Roles</span>
                 </a>
             </li>
+            <?php endif; ?>
+
+            <!-- Backup & Reseteo BD -->
+            <?php if (tienePermisoModulo('backup')): ?>
+            <li>
+                <a class="sidebar-link <?= ($paginaActual === 'backup.php') ? 'active' : '' ?>" href="backup.php">
+                    <i class="bi bi-database-gear"></i>
+                    <span>Backup & Reseteo BD</span>
+                </a>
+            </li>
+            <?php endif; ?>
             <?php endif; ?>
         </ul>
 

@@ -7,8 +7,8 @@
 require_once __DIR__ . '/conexion.php';
 require_once __DIR__ . '/auth.php';
 
-// Exigir autenticación
-exigirAutenticacion();
+// Exigir permiso de módulo
+exigirPermisoModulo('dashboard');
 $usuarioActual = obtenerUsuarioActual();
 $eventoActual = obtenerEventoActivo();
 $eventoId = $eventoActual ? $eventoActual['id'] : 0;

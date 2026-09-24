@@ -8,8 +8,8 @@
 require_once __DIR__ . '/conexion.php';
 require_once __DIR__ . '/auth.php';
 
-// Exigir autenticación (Admin y Auditor)
-exigirRol(['admin', 'auditor']);
+// Exigir permiso al módulo de eventos
+exigirPermisoModulo('eventos');
 $usuarioActual = obtenerUsuarioActual();
 
 $error = null;

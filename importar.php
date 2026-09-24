@@ -8,8 +8,8 @@
 require_once __DIR__ . '/conexion.php';
 require_once __DIR__ . '/auth.php';
 
-// Exigir rol de Administrador
-exigirRol(['admin']);
+// Exigir permiso al módulo de importar
+exigirPermisoModulo('importar');
 
 $eventoActual = obtenerEventoActivo();
 if (!$eventoActual) {

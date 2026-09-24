@@ -7,8 +7,8 @@
 require_once __DIR__ . '/conexion.php';
 require_once __DIR__ . '/auth.php';
 
-// Permitir acceso a todos los roles autenticados
-exigirAutenticacion();
+// Exigir permiso al módulo de conteo físico
+exigirPermisoModulo('conteo');
 $usuarioActual = obtenerUsuarioActual();
 $eventoActual = obtenerEventoActivo();
 

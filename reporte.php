@@ -7,8 +7,8 @@
 require_once __DIR__ . '/conexion.php';
 require_once __DIR__ . '/auth.php';
 
-// Exigir rol de Admin o Auditor
-exigirRol(['admin', 'auditor']);
+// Exigir permiso al módulo de reporte/conciliación
+exigirPermisoModulo('reporte');
 
 $eventoActual = obtenerEventoActivo();
 $eventoId = $eventoActual ? $eventoActual['id'] : 1;

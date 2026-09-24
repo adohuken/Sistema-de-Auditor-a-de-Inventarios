@@ -37,6 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['usuario_nombre']   = $usuario['nombre'];
                     $_SESSION['usuario_username'] = $usuario['username'];
                     $_SESSION['usuario_perfil']   = $usuario['perfil'];
+                    $_SESSION['usuario_permisos'] = $usuario['permisos'] ?? '';
 
                     $_SESSION['flash_success'] = "¡Bienvenido/a, " . htmlspecialchars($usuario['nombre']) . "!";
                     header("Location: conteo.php");

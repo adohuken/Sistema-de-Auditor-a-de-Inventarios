@@ -138,6 +138,21 @@ function migrarEstructuraEventos($pdo) {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         ");
 
+        // 6. Garantizar columna permisos en usuarios
+        $hasColPermisos = $pdo->query("SHOW COLUMNS FROM usuarios LIKE 'permisos'")->fetch();
+        if (!$hasColPermisos) {
+            $pdo->exec("ALTER TABLE usuarios ADD COLUMN permisos TEXT NULL AFTER perfil");
+        }
+
+        // Asignar permisos por defecto a usuarios que aún no tengan definido permisos
+        $todosModulos = 'dashboard,eventos,conteo,reporte,informes,importar,usuarios,backup';
+        $auditorModulos = 'dashboard,eventos,conteo,reporte,informes';
+        $almacenModulos = 'dashboard,conteo';
+
+        $pdo->exec("UPDATE usuarios SET permisos = '{$todosModulos}' WHERE (permisos IS NULL OR permisos = '') AND perfil = 'admin'");
+        $pdo->exec("UPDATE usuarios SET permisos = '{$auditorModulos}' WHERE (permisos IS NULL OR permisos = '') AND perfil = 'auditor'");
+        $pdo->exec("UPDATE usuarios SET permisos = '{$almacenModulos}' WHERE (permisos IS NULL OR permisos = '') AND perfil = 'almacenista'");
+
     } catch (Exception $e) {
         // Ignorar advertencias si ya están migrados los índices
     }

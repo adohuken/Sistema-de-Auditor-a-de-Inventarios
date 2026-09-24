@@ -6,3 +6,6 @@ Thumbs.db
 
 # System logs
 *.log
+
+# Backups SQL
+backups/*.sql
