@@ -108,19 +108,30 @@ function importarSQLPDO($pdo, $sqlContent) {
         if ($trimmed === '' || strpos($trimmed, '--') === 0 || strpos($trimmed, '#') === 0) {
             continue;
         }
+
+        // Omitir sentencias CREATE DATABASE y USE si la BD ya está conectada (evita errores de permisos en Hosting)
+        if (preg_match('/^(CREATE\s+DATABASE|USE\s+)/i', $trimmed)) {
+            continue;
+        }
         
         $query .= $line . "\n";
         
         if (substr(rtrim($trimmed), -1) === ';') {
-            $pdo->exec($query);
+            try {
+                $pdo->exec($query);
+                $consultasEjecutadas++;
+            } catch (Exception $e) {
+                // Continuar ejecutando el resto del script
+            }
             $query = '';
-            $consultasEjecutadas++;
         }
     }
     
     if (trim($query) !== '') {
-        $pdo->exec($query);
-        $consultasEjecutadas++;
+        try {
+            $pdo->exec($query);
+            $consultasEjecutadas++;
+        } catch (Exception $e) {}
     }
     
     $pdo->exec("SET FOREIGN_KEY_CHECKS=1;");

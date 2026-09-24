@@ -1,20 +1,16 @@
 <?php
 /**
  * Conexión segura a la base de datos MySQL / MariaDB mediante PDO
- * Optimizado para WAMPServer y XAMPP
+ * Soporta entorno Híbrido (Local XAMPP/WAMPServer y Online Hosting/InfinityFree)
  * Sistema de Auditoría de Inventarios
  */
 
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'inventario_db');
-define('DB_USER', 'root');
-define('DB_PASS', '');
-define('DB_CHARSET', 'utf8mb4');
+require_once __DIR__ . '/config.php';
 
 function getPDOConnection() {
     static $pdo = null;
     if ($pdo === null) {
-        $puertos = [3306, 3308]; // Puertos estándar en WAMPServer (MySQL y MariaDB)
+        $puertos = defined('DB_PORTS') && is_array(DB_PORTS) ? DB_PORTS : [3306, 3308];
         $ultimoError = null;
 
         foreach ($puertos as $puerto) {
@@ -27,25 +23,21 @@ function getPDOConnection() {
                 ];
                 $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
                 
-                // Asegurar estructura de eventos y usuarios semilla
+                // Asegurar estructura de eventos, tablas y usuarios semilla
                 migrarEstructuraEventos($pdo);
                 asegurarUsuariosBase($pdo);
                 return $pdo;
             } catch (PDOException $e) {
-                // Si la BD no existe aún en este puerto, intentar auto-crearla con database.sql
+                // Si la BD no existe aún en este puerto, intentar auto-crearla si es permitido por el servidor
                 if (strpos($e->getMessage(), 'Unknown database') !== false || $e->getCode() == 1049) {
                     try {
                         $tmpPdo = new PDO("mysql:host=" . DB_HOST . ";port=" . $puerto . ";charset=" . DB_CHARSET, DB_USER, DB_PASS);
-                        $sqlFile = __DIR__ . '/database.sql';
-                        if (file_exists($sqlFile)) {
-                            $sql = file_get_contents($sqlFile);
-                            $tmpPdo->exec($sql);
-                            // Reintentar conexión tras crear BD
-                            $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
-                            migrarEstructuraEventos($pdo);
-                            asegurarUsuariosBase($pdo);
-                            return $pdo;
-                        }
+                        $tmpPdo->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+                        
+                        $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
+                        migrarEstructuraEventos($pdo);
+                        asegurarUsuariosBase($pdo);
+                        return $pdo;
                     } catch (PDOException $ex) {
                         $ultimoError = $ex;
                     }
@@ -55,16 +47,27 @@ function getPDOConnection() {
             }
         }
 
-        // Si fallaron todos los puertos
-        die('<div style="padding: 20px; font-family: sans-serif; background: #fff3f3; color: #721c24; border: 1px solid #f5c6cb; border-radius: 8px; margin: 20px;">' .
-            '<h3>Error de Conexión a Base de Datos (WAMPServer / MySQL)</h3>' .
-            '<p>No se pudo conectar a MySQL ni MariaDB en los puertos 3306 o 3308.</p>' .
-            '<p><b>Detalle técnico:</b> ' . htmlspecialchars($ultimoError ? $ultimoError->getMessage() : 'Error desconocido') . '</p>' .
-            '<ul>' .
-            '<li>Verifica que el icono de <b>WAMPServer</b> esté en verde en la barra de tareas.</li>' .
-            '<li>Asegúrate de haber ejecutado el archivo <code>database.sql</code> en <b>phpMyAdmin</b>.</li>' .
-            '</ul>' .
-            '</div>');
+        // Si fallaron los intentos, desplegar diagnóstico claro según el entorno
+        $httpHost = $_SERVER['HTTP_HOST'] ?? '';
+        $esLocal = empty($httpHost) || in_array($httpHost, ['localhost', '127.0.0.1', '::1']) || strpos($httpHost, 'localhost:') === 0;
+
+        $msgHtml = '<div style="padding: 24px; font-family: system-ui, -apple-system, sans-serif; background: #fff3f3; color: #721c24; border: 1px solid #f5c6cb; border-radius: 12px; margin: 30px auto; max-width: 650px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">';
+        $msgHtml .= '<h3 style="margin-top:0; color:#b91c1c;">Error de Conexión a Base de Datos</h3>';
+        $msgHtml .= '<p>No se pudo conectar a la base de datos <b>' . htmlspecialchars(DB_NAME) . '</b> en el servidor <b>' . htmlspecialchars(DB_HOST) . '</b>.</p>';
+        $msgHtml .= '<p style="font-family: monospace; background: #fee2e2; padding: 10px; border-radius: 6px; font-size: 0.85rem;"><b>Detalle técnico:</b> ' . htmlspecialchars($ultimoError ? $ultimoError->getMessage() : 'Error desconocido') . '</p>';
+        
+        if ($esLocal) {
+            $msgHtml .= '<h4>Verificaciones Modo Local (XAMPP / WAMPServer):</h4>';
+            $msgHtml .= '<ul><li>Asegúrate de que el módulo <b>MySQL</b> esté iniciado en el Panel de Control.</li>';
+            $msgHtml .= '<li>Verifica que la base de datos <code>' . htmlspecialchars(DB_NAME) . '</code> exista en <b>phpMyAdmin</b>.</li></ul>';
+        } else {
+            $msgHtml .= '<h4>Verificaciones Modo Online (Hosting / InfinityFree):</h4>';
+            $msgHtml .= '<ul><li>Asegúrate de haber creado la base de datos en el panel de control de InfinityFree.</li>';
+            $msgHtml .= '<li>Confirma las credenciales en <code>config.php</code> o <code>config.local.php</code>.</li></ul>';
+        }
+        $msgHtml .= '</div>';
+        
+        die($msgHtml);
     }
     return $pdo;
 }

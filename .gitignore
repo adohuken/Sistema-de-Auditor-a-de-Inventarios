@@ -9,3 +9,6 @@ Thumbs.db
 
 # Backups SQL
 backups/*.sql
+
+# Configuración Local Específica
+config.local.php
