@@ -1,19 +1,22 @@
 -- Base de Datos para el Sistema de Auditoría de Inventarios Físicos por Eventos
+-- Compatible con MySQL / MariaDB (XAMPP, WAMPServer e InfinityFree)
+
 CREATE DATABASE IF NOT EXISTS `inventario_db` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE `inventario_db`;
 
--- 1. Tabla de Usuarios y Perfiles (Roles)
+-- 1. Tabla de Usuarios y Perfiles (Roles y Permisos Dinámicos)
 CREATE TABLE IF NOT EXISTS `usuarios` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `nombre` VARCHAR(100) NOT NULL,
   `username` VARCHAR(50) NOT NULL UNIQUE,
   `password` VARCHAR(255) NOT NULL,
   `perfil` ENUM('admin', 'auditor', 'almacenista') NOT NULL DEFAULT 'almacenista',
+  `permisos` TEXT NULL,
   `estado` TINYINT(1) NOT NULL DEFAULT 1,
   `fecha_creacion` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 2. Tabla de Eventos de Auditoría (Tomas Físicas 2-3 veces al año)
+-- 2. Tabla de Eventos de Auditoría (Tomas Físicas)
 CREATE TABLE IF NOT EXISTS `eventos_auditoria` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `nombre_evento` VARCHAR(150) NOT NULL,
@@ -74,12 +77,13 @@ CREATE TABLE IF NOT EXISTS `asignaciones_auditoria` (
 -- DATOS SEMILLA INICIALES DE PRUEBA
 -- =========================================================================
 
--- Insertar / Actualizar Usuarios por Defecto (Pass: admin123, auditor123, almacen123)
-INSERT INTO `usuarios` (`nombre`, `username`, `password`, `perfil`, `estado`) VALUES
-('Carlos Administrador', 'admin', '$2y$10$K2d4Ll.oL8HUXweuV8A0Se/qd/9lQcTjRTouAKrlXeIeBWyrrBL3.', 'admin', 1),
-('Ana Auditora', 'auditor', '$2y$10$TJyFmgoQsAbb5yeP6375iulErjvfIpVXLdzbjufJTPVtm.Eq6ItaW', 'auditor', 1),
-('Roberto Almacén', 'almacenista', '$2y$10$9tT2uElCBFzi39XAWDf5R.oyTArYjPTnBreCkGMs/wIv9L4DoD.i2', 'almacenista', 1)
-ON DUPLICATE KEY UPDATE `password` = VALUES(`password`), `nombre` = VALUES(`nombre`), `perfil` = VALUES(`perfil`), `estado` = 1;
+-- Insertar / Actualizar Usuarios por Defecto
+-- Passwords: admin123, auditor123, almacen123
+INSERT INTO `usuarios` (`id`, `nombre`, `username`, `password`, `perfil`, `permisos`, `estado`) VALUES
+(1, 'Carlos Administrador', 'admin', '$2y$10$K2d4Ll.oL8HUXweuV8A0Se/qd/9lQcTjRTouAKrlXeIeBWyrrBL3.', 'admin', 'dashboard,eventos,conteo,reporte,informes,importar,usuarios,backup', 1),
+(2, 'Ana Auditora', 'auditor', '$2y$10$TJyFmgoQsAbb5yeP6375iulErjvfIpVXLdzbjufJTPVtm.Eq6ItaW', 'auditor', 'dashboard,eventos,conteo,reporte,informes', 1),
+(3, 'Roberto Almacén', 'almacenista', '$2y$10$9tT2uElCBFzi39XAWDf5R.oyTArYjPTnBreCkGMs/wIv9L4DoD.i2', 'almacenista', 'dashboard,conteo', 1)
+ON DUPLICATE KEY UPDATE `password` = VALUES(`password`), `nombre` = VALUES(`nombre`), `perfil` = VALUES(`perfil`), `permisos` = VALUES(`permisos`), `estado` = 1;
 
 -- Evento de Auditoría Semilla Inicial
 INSERT INTO `eventos_auditoria` (`id`, `nombre_evento`, `bodega_sucursal`, `fecha_inicio`, `estado`, `usuario_creador`, `notas`) VALUES
