@@ -1,7 +1,7 @@
 <?php
 /**
  * Conexión segura a la base de datos MySQL / MariaDB mediante PDO
- * Soporta entorno Híbrido (Local XAMPP/WAMPServer y Online Hosting/InfinityFree)
+ * Auto-detectando entorno (Local XAMPP vs Online InfinityFree)
  * Sistema de Auditoría de Inventarios
  */
 
@@ -10,96 +10,68 @@ require_once __DIR__ . '/config.php';
 function getPDOConnection() {
     static $pdo = null;
     if ($pdo === null) {
-        $httpHost = strtolower($_SERVER['HTTP_HOST'] ?? '');
-        $hostOnly = explode(':', $httpHost)[0];
-
-        $esStrictLocalHost = (
-            empty($hostOnly) ||
-            $hostOnly === 'localhost' ||
-            $hostOnly === '127.0.0.1' ||
-            $hostOnly === '::1' ||
-            str_ends_with($hostOnly, '.local')
+        $host_env = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+        $is_local_env = (
+            empty($host_env) ||
+            $host_env === 'localhost' ||
+            strpos($host_env, '127.0.0.1') !== false ||
+            php_sapi_name() === 'cli'
         );
 
-        // Lista ordenada de destinos de conexión a probar
-        $destinos = [];
-
-        if ($esStrictLocalHost) {
-            // Petición desde localhost: Probar primero MySQL Local (XAMPP / WAMPServer)
-            $destinos[] = ['name' => 'Local (127.0.0.1:3306)',  'host' => DB_LOCAL_HOST, 'port' => 3306, 'user' => DB_LOCAL_USER, 'pass' => DB_LOCAL_PASS, 'dbname' => DB_LOCAL_NAME, 'is_local' => true];
-            $destinos[] = ['name' => 'Local (127.0.0.1:3308)',  'host' => DB_LOCAL_HOST, 'port' => 3308, 'user' => DB_LOCAL_USER, 'pass' => DB_LOCAL_PASS, 'dbname' => DB_LOCAL_NAME, 'is_local' => true];
-            // Respaldo Online
-            $destinos[] = ['name' => 'Online (' . DB_HOST . ')', 'host' => DB_HOST,      'port' => 3306, 'user' => DB_USER,       'pass' => DB_PASS,       'dbname' => DB_NAME,       'is_local' => false];
+        if ($is_local_env) {
+            // CONFIGURACIÓN LOCAL (XAMPP / WAMPServer)
+            $host = 'localhost';
+            $db   = 'inventario_db';
+            $user = 'root';
+            $pass = '';
         } else {
-            // Petición desde dominio online / hosting (InfinityFree: isdautic.ct.ws): Probar primero MySQL Online
-            $destinos[] = ['name' => 'Online (' . DB_HOST . ')', 'host' => DB_HOST,      'port' => 3306, 'user' => DB_USER,       'pass' => DB_PASS,       'dbname' => DB_NAME,       'is_local' => false];
-            $destinos[] = ['name' => 'Online (127.0.0.1)',      'host' => '127.0.0.1',  'port' => 3306, 'user' => DB_USER,       'pass' => DB_PASS,       'dbname' => DB_NAME,       'is_local' => false];
-            // Respaldo Local por si se ejecuta en servidor LAN de desarrollo
-            $destinos[] = ['name' => 'Local (127.0.0.1:3306)',  'host' => DB_LOCAL_HOST, 'port' => 3306, 'user' => DB_LOCAL_USER, 'pass' => DB_LOCAL_PASS, 'dbname' => DB_LOCAL_NAME, 'is_local' => true];
+            // CONFIGURACIÓN PRODUCCIÓN (InfinityFree: isdautic.ct.ws)
+            $host = 'sql205.infinityfree.com';
+            $db   = 'if0_42994760_inventario_db';
+            $user = 'if0_42994760';
+            $pass = 'HBSyvcdBOti1L';
         }
 
-        $erroresDetallados = [];
+        // Asegurar constantes globales de respaldo
+        if (!defined('DB_HOST')) define('DB_HOST', $host);
+        if (!defined('DB_NAME')) define('DB_NAME', $db);
+        if (!defined('DB_USER')) define('DB_USER', $user);
+        if (!defined('DB_PASS')) define('DB_PASS', $pass);
+
+        $charset = 'utf8mb4';
+        $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
         $options = [
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES   => false,
-            PDO::ATTR_TIMEOUT            => 4,
         ];
 
-        // Configurar Zona Horaria PHP (GMT-6)
-        date_default_timezone_set('America/Mexico_City');
+        // Configurar Zona Horaria de consistencia
+        date_default_timezone_set('America/Managua');
 
-        foreach ($destinos as $target) {
-            try {
-                $dsn = "mysql:host=" . $target['host'] . ";port=" . $target['port'] . ";dbname=" . $target['dbname'] . ";charset=" . DB_CHARSET;
-                $pdo = new PDO($dsn, $target['user'], $target['pass'], $options);
-
-                // Intentar establecer zona horaria MySQL
+        try {
+            $pdo = new PDO($dsn, $user, $pass, $options);
+            
+            // Asegurar migración de estructura y usuarios base
+            migrarEstructuraEventos($pdo);
+            asegurarUsuariosBase($pdo);
+            return $pdo;
+        } catch (\PDOException $e) {
+            // Si en entorno local la base de datos no existe aún, intentar auto-crearla
+            if ($is_local_env && (strpos($e->getMessage(), 'Unknown database') !== false || $e->getCode() == 1049)) {
                 try {
-                    $pdo->exec("SET time_zone = '-06:00'");
-                } catch (PDOException $eTz) {}
-
-                // Migrar y asegurar tablas y datos iniciales
-                migrarEstructuraEventos($pdo);
-                asegurarUsuariosBase($pdo);
-                return $pdo;
-            } catch (PDOException $e) {
-                // Si la BD no existe en el puerto local, intentar auto-crearla
-                if ($target['is_local'] && (strpos($e->getMessage(), 'Unknown database') !== false || $e->getCode() == 1049)) {
-                    try {
-                        $tmpPdo = new PDO("mysql:host=" . $target['host'] . ";port=" . $target['port'] . ";charset=" . DB_CHARSET, $target['user'], $target['pass']);
-                        $tmpPdo->exec("CREATE DATABASE IF NOT EXISTS `" . $target['dbname'] . "` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
-                        
-                        $pdo = new PDO($dsn, $target['user'], $target['pass'], $options);
-                        migrarEstructuraEventos($pdo);
-                        asegurarUsuariosBase($pdo);
-                        return $pdo;
-                    } catch (PDOException $ex) {
-                        $erroresDetallados[$target['name']] = $ex->getMessage();
-                    }
-                } else {
-                    $erroresDetallados[$target['name']] = $e->getMessage();
+                    $tmpPdo = new PDO("mysql:host=$host;charset=$charset", $user, $pass);
+                    $tmpPdo->exec("CREATE DATABASE IF NOT EXISTS `$db` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+                    $pdo = new PDO($dsn, $user, $pass, $options);
+                    migrarEstructuraEventos($pdo);
+                    asegurarUsuariosBase($pdo);
+                    return $pdo;
+                } catch (\PDOException $ex) {
+                    exit('Error de conexión a la Base de Datos: ' . $ex->getMessage());
                 }
             }
+            exit('Error de conexión a la Base de Datos: ' . $e->getMessage());
         }
-
-        // Si fallaron todas las opciones, desplegar reporte detallado por destino
-        $msgHtml = '<div style="padding: 24px; font-family: system-ui, -apple-system, sans-serif; background: #fff3f3; color: #721c24; border: 1px solid #f5c6cb; border-radius: 12px; margin: 30px auto; max-width: 680px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">';
-        $msgHtml .= '<h3 style="margin-top:0; color:#b91c1c;">Error de Conexión a Base de Datos</h3>';
-        $msgHtml .= '<p>No se pudo conectar a la base de datos MySQL en ninguno de los destinos configurados.</p>';
-        $msgHtml .= '<div style="font-family: monospace; background: #fee2e2; padding: 12px; border-radius: 6px; font-size: 0.825rem; margin-bottom: 15px;">';
-        $msgHtml .= '<b>Reporte técnico por destino:</b><ul style="margin: 5px 0 0 0; padding-left: 20px;">';
-        foreach ($erroresDetallados as $destName => $errStr) {
-            $msgHtml .= '<li><b>' . htmlspecialchars($destName) . ':</b> ' . htmlspecialchars($errStr) . '</li>';
-        }
-        $msgHtml .= '</ul></div>';
-        $msgHtml .= '<h4>Acciones Sugeridas:</h4>';
-        $msgHtml .= '<ul>';
-        $msgHtml .= '<li><b>En InfinityFree (' . htmlspecialchars($httpHost) . '):</b> Verifica en tu panel de control que la base de datos <code>' . htmlspecialchars(DB_NAME) . '</code> esté creada en la sección <b>MySQL Databases</b> y que las credenciales en <code>config.php</code> coincidan.</li>';
-        $msgHtml .= '<li><b>En PC Local:</b> Asegúrate de iniciar el módulo MySQL en XAMPP o WAMPServer.</li>';
-        $msgHtml .= '</ul></div>';
-        
-        die($msgHtml);
     }
     return $pdo;
 }
