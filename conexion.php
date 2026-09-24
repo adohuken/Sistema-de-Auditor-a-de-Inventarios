@@ -29,7 +29,7 @@ function getPDOConnection() {
             $host = 'sql205.infinityfree.com';
             $db   = 'if0_42994760_inventario_db';
             $user = 'if0_42994760';
-            $pass = 'HBSyvcdBOti1L';
+            $pass = 'HBSyvcdBOtilL';
         }
 
         // Asegurar constantes globales de respaldo

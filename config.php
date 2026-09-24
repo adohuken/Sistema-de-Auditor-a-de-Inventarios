@@ -24,7 +24,7 @@ if ($is_local_env) {
     if (!defined('DB_HOST'))  define('DB_HOST', 'sql205.infinityfree.com');
     if (!defined('DB_NAME'))  define('DB_NAME', 'if0_42994760_inventario_db');
     if (!defined('DB_USER'))  define('DB_USER', 'if0_42994760');
-    if (!defined('DB_PASS'))  define('DB_PASS', 'HBSyvcdBOti1L');
+    if (!defined('DB_PASS'))  define('DB_PASS', 'HBSyvcdBOtilL');
     if (!defined('BASE_URL')) define('BASE_URL', '/');
     
     // InfinityFree Session Fix
